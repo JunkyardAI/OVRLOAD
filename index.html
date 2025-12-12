@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OVRLOAD Visualizer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #ffffff; font-family: 'Inter', sans-serif; user-select: none; }
+        canvas { display: block; }
+        
+        /* --- MAIN UI --- */
+        #ui-container {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            z-index: 100;
+            pointer-events: none;
+            color: #000;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 900;
+            margin: 0;
+            letter-spacing: -1.0px;
+            text-transform: uppercase;
+            font-style: italic;
+        }
+
+        p {
+            font-size: 10px;
+            margin: 2px 0 0 0;
+            color: #888;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* --- TRACKLIST --- */
+        #tracklist-container {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 12px;
+        }
+
+        .sc-btn {
+            background: #ff5500;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+            font-size: 10px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: transform 0.2s;
+            margin-bottom: 20px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .sc-btn:hover { transform: scale(1.05); }
+
+        .track-item {
+            font-size: 11px;
+            font-weight: 600;
+            color: #bbb;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: right;
+            text-transform: uppercase;
+            padding: 5px 10px;
+            border-right: 2px solid transparent;
+        }
+
+        .track-item span {
+            color: #000;
+            font-weight: 900;
+            margin-right: 5px;
+        }
+
+        .track-item:hover {
+            color: #000;
+            border-right: 2px solid #000;
+            transform: translateX(-5px);
+        }
+
+        .track-item.playing {
+            color: #00ffff;
+            border-right: 2px solid #00ffff;
+        }
+
+        .track-item.playing span {
+            color: #00ffff;
+        }
+
+        /* --- SC PLAYER OVERLAY --- */
+        #sc-player-overlay {
+            position: absolute;
+            bottom: 100px;
+            right: 40px;
+            width: 300px;
+            height: 166px;
+            z-index: 102;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            transform: translateY(20px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #sc-player-overlay.visible {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        iframe { border: none; width: 100%; height: 100%; border-radius: 8px; }
+
+        /* --- CONTROLS DOCK --- */
+        #controls-dock {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 101;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+            width: 90%;
+            max-width: 600px;
+            pointer-events: auto;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(0,0,0,0.05);
+            border-radius: 20px;
+            padding: 12px 25px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 25px;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .control-group { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+
+        label {
+            font-size: 9px;
+            color: #888;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: #000;
+            height: 4px;
+            border-radius: 2px;
+            cursor: pointer;
+        }
+
+        button {
+            background: #f0f0f0;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        button:hover { background: #e0e0e0; transform: translateY(-1px); }
+        button.active { background: #000; color: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        button.utility { background: transparent; border: 1px solid #ddd; }
+
+        #loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            font-weight: 900;
+            color: #000;
+            letter-spacing: 2px;
+            z-index: 200;
+            display: none;
+        }
+
+        .hidden { opacity: 0; pointer-events: none; transform: translate(-50%, 40px) !important; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Loading -->
+    <div id="loading">LOADING...</div>
+
+    <!-- UI Header -->
+    <div id="ui-container">
+        <h1>OVRLOAD</h1>
+        <p>Sound Kit Visualizer</p>
+    </div>
+
+    <!-- Tracklist / Link -->
+    <div id="tracklist-container">
+        <button id="btn-sc-toggle" class="sc-btn">STREAM ALBUM (SOUNDCLOUD)</button>
+        
+        <!-- 
+             IMPORTANT: Place your audio files in a folder named 'files' relative to this HTML file.
+             Ensure filenames match EXACTLY, including spaces and symbols.
+        -->
+        <div class="track-item" data-src="files/2 Moons w! Vilde but Sober.wav"><span>01.</span> 2 MOONS w/ VILDE BUT SOBER</div>
+        <div class="track-item" data-src="files/Kaiten.mp3"><span>02.</span> KAITEN</div>
+        <div class="track-item" data-src="files/Raijin.mp3"><span>03.</span> RAIJIN</div>
+        <div class="track-item" data-src="files/#F4U [ BUGG3D ].mp3"><span>04.</span> #F4U [BUGG3D]</div>
+        <div class="track-item" data-src="files/Senbonzakura w! Xee.wav"><span>05.</span> SENBONZAKURA w/ XEE</div>
+    </div>
+
+    <!-- SC Player (Hidden by default) -->
+    <div id="sc-player-overlay">
+        <iframe width="100%" height="166" scrolling="no" frameborder="no" allow="autoplay" 
+            src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/playlists/1915993883&color=%23000000&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true">
+        </iframe>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls-dock">
+        <div class="panel" style="padding: 8px 15px; border-radius: 15px; gap: 10px; width: auto;">
+            <label style="margin-right: 5px;">ZOOM</label>
+            <button id="btn-zoom-wide">WIDE</button>
+            <button id="btn-zoom-mid" class="active">MID</button>
+            <button id="btn-zoom-macro">MACRO</button>
+        </div>
+
+        <div class="panel">
+            <div class="control-group">
+                <label>Rotation</label>
+                <input type="range" id="speed" min="0.0" max="1.0" value="0.2" step="0.01">
+            </div>
+
+            <div class="control-group">
+                <label>Debris</label>
+                <input type="range" id="isolation" min="1" max="10" value="5">
+            </div>
+
+            <div class="control-group">
+                <label>Bitcrush</label>
+                <input type="range" id="bitcrush" min="1" max="10" value="1" step="0.1">
+            </div>
+
+            <div class="control-group" style="align-items: center; flex: 0;">
+                <label style="margin-bottom: 4px;">Color Cycle</label>
+                <button id="btn-chroma" style="width: 100%;">OFF</button>
+            </div>
+
+            <button id="toggle-ui-btn" class="utility">HIDE (H)</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+        // Simplex Noise
+        const SimplexNoise = (function(){function t(t){var e,r=new Uint8Array(256),n=new Uint8Array(256);for(e=0;e<256;e++)r[e]=e;for(e=0;e<256;e++){var o=r[e],i=Math.floor(Math.random()*256),a=r[i];r[e]=a,r[i]=o}for(e=0;e<256;e++)n[e]=r[e],n[e+256]=r[e];function s(t){return(t=(t=(t=t>>13^t)*(t*t*15731+789221)+1376312589)&2147483647)/1073741824-1}var h=[1,1,0,-1,1,0,1,-1,0,-1,-1,0,1,0,1,-1,0,1,1,0,-1,-1,0,-1,0,1,1,0,-1,1,0,1,-1,0,-1,-1],f=Math.sqrt(3),u=.5*(f-1),c=(3-f)/6;return{noise3D:function(t,e,r){var o,i,a,s,l,p,M,d,x,m,y,g=(t+e+r)/3,v=Math.floor(t+g),b=Math.floor(e+g),w=Math.floor(r+g),k=(v+b+w)*c,z=t-(v-k),A=e-(b-k),E=r-(w-k);z>=A?A>=E?(l=1,p=0,M=0,d=1,x=1,m=0):z>=E?(l=1,p=0,M=0,d=1,x=0,m=1):(l=0,p=0,M=1,d=1,x=0,m=1):A<E?(l=0,p=0,M=1,d=0,x=1,m=1):z<E?(l=0,p=1,M=0,d=0,x=1,m=1):(l=0,p=1,M=0,d=1,x=1,m=0);var I=z-l+c,N=A-p+c,P=E-M+c,j=z-d+2*c,q=A-x+2*c,F=E-m+2*c,O=z-1+3*c,R=A-1+3*c,S=E-1+3*c,U=255&v,V=255&b,W=255&w,X=.6-z*z-A*A-E*E;return X<0?o=0:o=(X*=X)*X*((h[y=3*n[U+n[V+n[W]]]]*z)+(h[y+1]*A)+(h[y+2]*E)),X=.6-I*I-N*N-P*P,X<0?i=0:i=(X*=X)*X*((h[y=3*n[U+l+n[V+p+n[W+M]]]]*I)+(h[y+1]*N)+(h[y+2]*P)),X=.6-j*j-q*q-F*F,X<0?a=0:a=(X*=X)*X*((h[y=3*n[U+d+n[V+x+n[W+m]]]]*j)+(h[y+1]*q)+(h[y+2]*F)),X=.6-O*O-R*R-S*S,X<0?s=0:s=(X*=X)*X*((h[y=3*n[U+1+n[V+1+n[W+1]]]]*O)+(h[y+1]*R)+(h[y+2]*S)),32*(o+i+a+s)}}}return t})();
+
+        let camera, scene, renderer, composer, controls;
+        let fluidMesh, debrisSystem;
+        let pixelPass;
+        let time = 0;
+        let clock = new THREE.Clock();
+        const noise = new SimplexNoise();
+        
+        let mouse = new THREE.Vector2(0, 0); 
+        let audioContext, analyser, dataArray, audioSource;
+        let isAudioActive = false;
+        let audioLevel = 0;
+        
+        let bass = 0, mid = 0, high = 0;
+        let previousBassEnergy = 0;
+        let dynamicBitcrush = 1.0;
+
+        const config = {
+            speed: 0.2, 
+            spread: 5, 
+            autoChroma: false,
+            chromaSpeed: 0.1, 
+            bitcrushBase: 1.0
+        };
+
+        let currentHue = 0;
+        let targetZoom = 1.0; 
+        let originalPositions;
+
+        const colors = [ new THREE.Color(0x00ffff), new THREE.Color(0xff0080), new THREE.Color(0xffaa00) ];
+
+        const PixelShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "resolution": { value: new THREE.Vector2() },
+                "pixelSize": { value: 1.0 },
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform vec2 resolution;
+                uniform float pixelSize;
+                varying vec2 vUv;
+                void main() {
+                    vec2 dxy = pixelSize / resolution;
+                    vec2 coord = dxy * floor( vUv / dxy );
+                    gl_FragColor = texture2D( tDiffuse, coord );
+                }
+            `
+        };
+
+        let mainLight, backLight;
+
+        init();
+        animate();
+
+        function init() {
+            const container = document.createElement('div');
+            document.body.appendChild(container);
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff); 
+            scene.fog = new THREE.Fog(0xffffff, 20, 80);
+
+            const frustumSize = 25; 
+            const aspect = window.innerWidth / window.innerHeight;
+            camera = new THREE.OrthographicCamera(
+                frustumSize * aspect / -2, 
+                frustumSize * aspect / 2, 
+                frustumSize / 2, 
+                frustumSize / -2, 
+                1, 
+                1000
+            );
+            camera.position.set(0, 0, 20); 
+            camera.lookAt(0, 0, 0);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+            scene.add(ambientLight);
+
+            mainLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            mainLight.position.set(5, 10, 7);
+            mainLight.castShadow = true;
+            scene.add(mainLight);
+
+            backLight = new THREE.DirectionalLight(0xaaccff, 1.0);
+            backLight.position.set(-5, 5, 10);
+            scene.add(backLight);
+
+            const pmremGenerator = new THREE.PMREMGenerator(new THREE.WebGLRenderer());
+            pmremGenerator.compileEquirectangularShader();
+            const envMap = generateStudioEnvMap(pmremGenerator);
+            scene.environment = envMap;
+
+            const normalMap = generateNoiseTexture();
+
+            // MATERIAL - DARK GREY CHROME
+            const material = new THREE.MeshPhysicalMaterial({ 
+                color: 0x111111, 
+                roughness: 0.15,
+                metalness: 0.8,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.1,
+                normalMap: normalMap,
+                normalScale: new THREE.Vector2(0.2, 0.2), 
+                envMap: envMap,
+                envMapIntensity: 1.5 
+            });
+
+            // 1. Fluid Sphere - High Detail
+            const geometry = new THREE.IcosahedronGeometry(3.5, 20); 
+            originalPositions = geometry.attributes.position.clone();
+            fluidMesh = new THREE.Mesh(geometry, material);
+            scene.add(fluidMesh);
+
+            // 2. Debris
+            createDebris(material);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false }); 
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.1;
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableRotate = false; 
+            controls.enableZoom = true; 
+            controls.enablePan = false;
+
+            composer = new EffectComposer(renderer);
+            const renderScene = new RenderPass(scene, camera);
+            composer.addPass(renderScene);
+
+            pixelPass = new ShaderPass(PixelShader);
+            pixelPass.uniforms["resolution"].value = new THREE.Vector2(window.innerWidth, window.innerHeight);
+            pixelPass.uniforms["pixelSize"].value = 1.0;
+            composer.addPass(pixelPass);
+
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.85; 
+            bloomPass.strength = 0.4; 
+            bloomPass.radius = 0.4;
+            composer.addPass(bloomPass);
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('mousemove', onMouseMove);
+            setupUI();
+        }
+
+        function createDebris(material) {
+            const count = 40;
+            const geom = new THREE.IcosahedronGeometry(0.3, 0); 
+            debrisSystem = new THREE.InstancedMesh(geom, material, count);
+            
+            const dummy = new THREE.Object3D();
+            debrisSystem.userData.particles = [];
+            
+            for (let i = 0; i < count; i++) {
+                const particle = {
+                    x: (Math.random() - 0.5) * 20,
+                    y: (Math.random() - 0.5) * 15,
+                    z: (Math.random() - 0.5) * 5,
+                    rx: Math.random() * Math.PI,
+                    ry: Math.random() * Math.PI,
+                    scale: 0.5 + Math.random(),
+                    speed: 0.02 + Math.random() * 0.05,
+                    driftX: (Math.random() - 0.5) * 0.05
+                };
+                debrisSystem.userData.particles.push(particle);
+
+                dummy.position.set(particle.x, particle.y, particle.z);
+                dummy.rotation.set(particle.rx, particle.ry, 0);
+                dummy.scale.setScalar(particle.scale);
+                dummy.updateMatrix();
+                debrisSystem.setMatrixAt(i, dummy.matrix);
+            }
+            
+            scene.add(debrisSystem);
+            debrisSystem.instanceMatrix.needsUpdate = true;
+        }
+
+        function updateFluidGeometry(dt) {
+            if (!fluidMesh) return;
+
+            const positions = fluidMesh.geometry.attributes.position;
+            const count = positions.count;
+            const timeScale = time * 0.5 * config.speed;
+            
+            const bassAmp = 0.5 + (bass * 2.0); 
+            const midAmp = mid * 1.5;
+            const highAmp = high * 0.5;
+
+            for (let i = 0; i < count; i++) {
+                const ox = originalPositions.getX(i);
+                const oy = originalPositions.getY(i);
+                const oz = originalPositions.getZ(i);
+
+                let distSq = ox*ox + oy*oy + oz*oz;
+                if (distSq < 0.0001) distSq = 1;
+                let invLen = 1.0 / Math.sqrt(distSq);
+                
+                let nx = ox * invLen;
+                let ny = oy * invLen;
+                let nz = oz * invLen;
+
+                const n1 = noise.noise3D(ox * 0.5 + timeScale, oy * 0.5 + timeScale, oz * 0.5);
+                const n2 = noise.noise3D(ox * 1.5 + time * 0.5, oy * 1.5, oz * 1.5 + time * 0.5);
+                const n3 = noise.noise3D(ox * 5.0, oy * 5.0 + time * 5.0, oz * 5.0);
+
+                let displacement = 0;
+                displacement += n1 * (0.5 + bassAmp * 0.5); 
+                displacement += n2 * (midAmp);              
+                displacement += n3 * (highAmp);             
+
+                const dist = 3.5 + displacement; 
+                if (isNaN(dist)) continue;
+
+                positions.setXYZ(i, nx * dist, ny * dist, nz * dist);
+            }
+
+            positions.needsUpdate = true;
+            fluidMesh.geometry.computeVertexNormals(); 
+        }
+
+        function updateScene(dt) {
+            updateFluidGeometry(dt);
+
+            if (fluidMesh) {
+                fluidMesh.position.y = Math.sin(time * 0.5) * 0.2;
+                const targetRotX = mouse.y * 0.1;
+                const targetRotY = mouse.x * 0.1;
+                fluidMesh.rotation.x = THREE.MathUtils.lerp(fluidMesh.rotation.x, targetRotX, dt * 2);
+                fluidMesh.rotation.y = THREE.MathUtils.lerp(fluidMesh.rotation.y, targetRotY + (time * 0.1), dt * 2);
+
+                if (config.autoChroma) {
+                    currentHue += dt * config.chromaSpeed * 0.2;
+                    if (currentHue > 1) currentHue -= 1;
+                    const c = new THREE.Color().setHSL(currentHue, 1.0, 0.5);
+                    fluidMesh.material.color.lerp(c, dt);
+                } else {
+                    fluidMesh.material.color.lerp(new THREE.Color(0x111111), dt);
+                }
+            }
+
+            if (debrisSystem) {
+                const particles = debrisSystem.userData.particles;
+                const dummy = new THREE.Object3D();
+                
+                for (let i = 0; i < particles.length; i++) {
+                    const p = particles[i];
+                    p.y += Math.sin(time * p.speed + i) * 0.02 * config.speed * 5.0; 
+                    p.x += Math.cos(time * p.speed * 0.5 + i) * 0.01 * config.speed * 5.0; 
+
+                    if (audioLevel > 0.1) {
+                        p.y += (Math.random() - 0.5) * audioLevel * 0.2;
+                    }
+
+                    dummy.position.set(p.x, p.y, p.z);
+                    dummy.rotation.set(p.rx + time * 0.5, p.ry + time * 0.2, 0);
+                    dummy.scale.setScalar(p.scale);
+                    dummy.updateMatrix();
+                    debrisSystem.setMatrixAt(i, dummy.matrix);
+                }
+                debrisSystem.instanceMatrix.needsUpdate = true;
+                debrisSystem.material.color.copy(fluidMesh.material.color);
+            }
+        }
+
+        function generateNoiseTexture() {
+            const size = 512;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const imgData = ctx.createImageData(size, size);
+            for (let i = 0; i < imgData.data.length; i += 4) {
+                const val = Math.random() * 255;
+                imgData.data[i] = val; imgData.data[i+1] = val; imgData.data[i+2] = 255; imgData.data[i+3] = 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        function generateStudioEnvMap(pmremGen) {
+            const sceneEnv = new THREE.Scene();
+            sceneEnv.background = new THREE.Color(0xffffff);
+            const boxMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const boxGeo = new THREE.BoxGeometry(10, 1, 1);
+            
+            const strip1 = new THREE.Mesh(boxGeo, boxMat); strip1.position.set(0, 5, 0); sceneEnv.add(strip1);
+            const strip2 = new THREE.Mesh(boxGeo, boxMat); strip2.position.set(0, -5, 0); strip2.rotation.z = Math.PI / 2; sceneEnv.add(strip2);
+            
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+            floor.rotation.x = -Math.PI / 2; floor.position.y = -10; sceneEnv.add(floor);
+            
+            return pmremGen.fromScene(sceneEnv).texture;
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function setZoom(level) { targetZoom = level; }
+
+        function updateCamera(dt) {
+            if (Math.abs(camera.zoom - targetZoom) > 0.01) {
+                camera.zoom = THREE.MathUtils.lerp(camera.zoom, targetZoom, dt * 2.0);
+                camera.updateProjectionMatrix();
+            }
+        }
+
+        // --- Audio Context ---
+        function initAudioContext() {
+            if (!audioContext) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioContext();
+            }
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+
+        // Load Audio From Track List (Local Files)
+        function loadAudioFile(path) {
+            initAudioContext();
+            const loadingEl = document.getElementById('loading');
+            loadingEl.style.display = 'block';
+            loadingEl.innerText = "LOADING...";
+
+            if(audioSource) {
+                try { audioSource.stop(); } catch(e){}
+            }
+
+            fetch(path)
+                .then(response => {
+                    if(!response.ok) throw new Error("File not found: " + path);
+                    return response.arrayBuffer();
+                })
+                .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
+                .then(audioBuffer => {
+                    if (audioSource) audioSource.disconnect();
+                    
+                    audioSource = audioContext.createBufferSource();
+                    audioSource.buffer = audioBuffer;
+                    audioSource.loop = true;
+
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 512;
+                    
+                    audioSource.connect(analyser);
+                    analyser.connect(audioContext.destination);
+                    
+                    audioSource.start(0);
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    isAudioActive = true;
+                    loadingEl.style.display = 'none';
+                })
+                .catch(err => {
+                    console.error(err);
+                    loadingEl.innerText = "FILE ERROR (CHECK PATHS)";
+                    setTimeout(() => loadingEl.style.display = 'none', 2000);
+                });
+        }
+
+        function processAudioAnalysis() {
+            if (!isAudioActive) {
+                bass = Math.sin(time) * 0.1;
+                mid = Math.cos(time * 0.5) * 0.1;
+                high = 0;
+                audioLevel = (bass + mid) / 2;
+                return;
+            }
+            
+            analyser.getByteFrequencyData(dataArray);
+
+            const bassEnd = 10; 
+            const midEnd = 100; 
+            
+            let bSum = 0, mSum = 0, hSum = 0;
+            
+            for (let i = 0; i < bassEnd; i++) bSum += dataArray[i];
+            for (let i = bassEnd; i < midEnd; i++) mSum += dataArray[i];
+            for (let i = midEnd; i < dataArray.length; i++) hSum += dataArray[i];
+
+            const targetBass = bSum / (bassEnd * 255);
+            const targetMid = mSum / ((midEnd - bassEnd) * 255);
+            const targetHigh = hSum / ((dataArray.length - midEnd) * 255);
+
+            bass = THREE.MathUtils.lerp(bass, targetBass, 0.2);
+            mid = THREE.MathUtils.lerp(mid, targetMid, 0.1); 
+            high = THREE.MathUtils.lerp(high, targetHigh, 0.3);
+
+            audioLevel = (bass + mid + high) / 3;
+
+            // Transient
+            const deltaBass = targetBass - previousBassEnergy;
+            if (deltaBass > 0.15) { 
+                const spikeStrength = Math.min(deltaBass * 5, 2.0); 
+                dynamicBitcrush = config.bitcrushBase + (spikeStrength * 12.0); 
+            } else {
+                dynamicBitcrush = THREE.MathUtils.lerp(dynamicBitcrush, config.bitcrushBase, 0.15);
+            }
+            previousBassEnergy = targetBass;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            time += dt;
+
+            const lightSpeed = 0.5;
+            mainLight.position.x = Math.sin(time * lightSpeed) * 10;
+            mainLight.position.z = Math.cos(time * lightSpeed) * 10;
+            backLight.position.x = Math.sin(time * lightSpeed + Math.PI) * 10;
+
+            controls.update();
+            updateCamera(dt);
+
+            processAudioAnalysis();
+
+            pixelPass.uniforms["pixelSize"].value = Math.max(1.0, dynamicBitcrush);
+
+            updateScene(dt);
+            composer.render();
+        }
+
+        function setupUI() {
+            const speedInput = document.getElementById('speed');
+            const isoInput = document.getElementById('isolation');
+            const bitcrushInput = document.getElementById('bitcrush');
+            const chromaBtn = document.getElementById('btn-chroma');
+            const hideBtn = document.getElementById('toggle-ui-btn');
+            const zWide = document.getElementById('btn-zoom-wide');
+            const zMid = document.getElementById('btn-zoom-mid');
+            const zMacro = document.getElementById('btn-zoom-macro');
+            
+            const trackItems = document.querySelectorAll('.track-item');
+            const scBtn = document.getElementById('btn-sc-toggle');
+            const scOverlay = document.getElementById('sc-player-overlay');
+
+            // Handle Track Clicks
+            trackItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    trackItems.forEach(t => t.classList.remove('playing'));
+                    item.classList.add('playing');
+                    const src = item.getAttribute('data-src');
+                    loadAudioFile(src);
+                });
+            });
+
+            // SC Toggle
+            scBtn.addEventListener('click', () => {
+                const isVisible = scOverlay.classList.toggle('visible');
+                scBtn.innerText = isVisible ? "CLOSE ALBUM" : "STREAM ALBUM (SOUNDCLOUD)";
+            });
+
+            speedInput.addEventListener('input', (e) => config.speed = parseFloat(e.target.value));
+            isoInput.addEventListener('input', (e) => config.spread = parseFloat(e.target.value));
+            bitcrushInput.addEventListener('input', (e) => config.bitcrushBase = parseFloat(e.target.value));
+            
+            chromaBtn.addEventListener('click', () => {
+                config.autoChroma = !config.autoChroma;
+                chromaBtn.innerText = config.autoChroma ? "ON" : "OFF";
+                chromaBtn.classList.toggle('active', config.autoChroma);
+            });
+
+            const zoomBtns = [zWide, zMid, zMacro];
+            const handleZoom = (btn, level) => {
+                zoomBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                setZoom(level);
+            };
+
+            zWide.addEventListener('click', () => handleZoom(zWide, 0.6));
+            zMid.addEventListener('click', () => handleZoom(zMid, 1.0));
+            zMacro.addEventListener('click', () => handleZoom(zMacro, 2.5));
+
+            const toggle = () => {
+                const hidden = document.getElementById('controls-dock').classList.toggle('hidden');
+                document.getElementById('ui-container').style.opacity = hidden ? 0 : 1;
+            };
+            hideBtn.addEventListener('click', toggle);
+            window.addEventListener('keydown', (e) => { if (e.key.toLowerCase() === 'h') toggle(); });
+        }
+
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 25; 
+            camera.left = -frustumSize * aspect / 2;
+            camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = -frustumSize / 2;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            pixelPass.uniforms["resolution"].value.set(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
